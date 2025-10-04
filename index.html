@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>🎴 Найди пары</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #1a1f29;
+      --card: #232a36;
+      --accent: #4da3ff;
+      --text: #e6e8ed;
+      --muted: #9aa4b2;
+      --danger: #ff6b6b;
+      --success: #6bff95;
+      --radius: 14px;
+      --gap: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .wrap {
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 16px 16px 24px;
+    }
+    h1 {
+      margin: 8px 0 6px;
+      font-size: 20px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .rules {
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--gap);
+      margin: 14px 0;
+    }
+    .stat {
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-size: 15px;
+      flex: 1;
+      text-align: center;
+    }
+    .actions {
+      display: flex;
+      gap: var(--gap);
+    }
+    .btn {
+      appearance: none;
+      border: 0;
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 15px;
+      cursor: pointer;
+      background: var(--panel);
+      color: var(--text);
+      transition: transform .05s ease, background .2s ease, opacity .2s ease;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--accent); color: #081018; }
+    .btn-danger { background: #2a1a1a; color: #ffd7d7; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 84px);
+      gap: var(--gap);
+      justify-content: center;
+      margin-top: 8px;
+    }
+    @media (min-width: 420px) {
+      .grid { grid-template-columns: repeat(4, 96px); }
+    }
+    .card {
+      width: 100%;
+      aspect-ratio: 1/1;
+      background: var(--card);
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 34px;
+      cursor: pointer;
+      user-select: none;
+      transition: transform .1s ease, background .2s ease, opacity .2s ease;
+    }
+    .card.hidden {
+      background: #141821;
+    }
+    .card.revealed {
+      outline: 2px solid rgba(77,163,255,.35);
+      outline-offset: -2px;
+    }
+    .msg {
+      text-align: center;
+      margin-top: 14px;
+      min-height: 28px;
+      font-size: 16px;
+    }
+    .msg.ok { color: var(--success); }
+    .msg.err { color: var(--danger); }
+    .foot-note {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      opacity: .8;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎴 Найди пары</h1>
+
+    <div class="rules">
+      📝 Правила:<br />
+      • Время идёт с 0 сек.<br />
+      • Ошибка добавляет <b>+10 сек</b> к времени.<br />
+      • Итог — твоё суммарное время. <b>Меньше = лучше.</b>
+    </div>
+
+    <div class="bar">
+      <div class="stat" id="stats">⏱ Время: 0 сек</div>
+      <div class="actions">
+        <button class="btn" id="restartBtn">🔄 Заново</button>
+        <button class="btn btn-danger" id="exitBtn">🚪 Выход</button>
+      </div>
+    </div>
+
+    <div class="grid" id="grid"></div>
+    <div class="msg" id="message"></div>
+
+    <div class="foot-note">
+      Игра открыта как Telegram WebApp • Cookies не используются
+    </div>
+  </div>
+
+  <script>
+    // --- Telegram WebApp boot ---
+    const tg = (window.Telegram && Telegram.WebApp) ? Telegram.WebApp : null;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      tg.MainButton.hide();
+      tg.BackButton.show();
+      tg.BackButton.onClick(() => tg.close());
+    }
+
+    // --- Game state ---
+    const EMOJIS = ["🍎","🍌","🍇","🍒","🍉","🍋","🥝","🍓"];
+    const grid = document.getElementById("grid");
+    const stats = document.getElementById("stats");
+    const message = document.getElementById("message");
+    const restartBtn = document.getElementById("restartBtn");
+    const exitBtn = document.getElementById("exitBtn");
+
+    let cards = [];
+    let first = null;
+    let lock = false;
+    let foundPairs = 0;
+
+    let time = 0;
+    let timer = null;
+    let finished = false;
+    let resultSent = false;
+
+    // --- Utils ---
+    const shuffle = arr => arr
+      .map(v => [Math.random(), v])
+      .sort((a,b) => a[0]-b[0])
+      .map(x => x[1]);
+
+    function formatTime(sec) {
+      sec = Math.max(0, Math.floor(sec));
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h) return `${h} ч ${m} мин ${s} сек`;
+      if (m) return `${m} мин ${s} сек`;
+      return `${s} сек`;
+    }
+
+    function updateStats() {
+      stats.textContent = `⏱ Время: ${formatTime(time)}`;
+    }
+
+    function startTimer() {
+      if (timer) return;
+      timer = setInterval(() => {
+        time += 1;
+        updateStats();
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+
+    function penalty() {
+      time += 10;
+      updateStats();
+    }
+
+    function sendWinResultOnce() {
+      if (resultSent) return;
+      resultSent = true;
+      const payload = {
+        action: 'save_score',
+        // мы шлём именно итоговое время (меньше — лучше)
+        time: time
+      };
+      if (tg) {
+        try { tg.sendData(JSON.stringify(payload)); } catch(_) {}
+        // Покажем MainButton «Закрыть» после победы
+        tg.MainButton.setText('Закрыть').show();
+        tg.MainButton.onClick(() => tg.close());
+      }
+    }
+
+    function onWin() {
+      stopTimer();
+      finished = true;
+      message.className = 'msg ok';
+      message.textContent = `🎉 Победа! Результат: ${formatTime(time)}`;
+      sendWinResultOnce();
+    }
+
+    function buildGrid() {
+      grid.innerHTML = '';
+      const data = shuffle([...EMOJIS, ...EMOJIS]);
+      cards = data.map((emoji, idx) => {
+        const el = document.createElement('div');
+        el.className = 'card hidden';
+        el.dataset.emoji = emoji;
+        el.dataset.index = String(idx);
+        el.textContent = '❓';
+        el.addEventListener('click', () => onCardClick(el));
+        grid.appendChild(el);
+        return el;
+      });
+    }
+
+    function resetGame() {
+      stopTimer();
+      time = 0;
+      finished = false;
+      resultSent = false;
+      first = null;
+      lock = false;
+      foundPairs = 0;
+      message.textContent = '';
+      message.className = 'msg';
+      updateStats();
+      buildGrid();
+      if (tg) tg.MainButton.hide();
+    }
+
+    function onCardClick(card) {
+      if (lock || finished) return;
+      if (!card.classList.contains('hidden')) return;
+
+      if (!timer) startTimer();
+
+      card.classList.remove('hidden');
+      card.classList.add('revealed');
+      card.textContent = card.dataset.emoji;
+
+      if (!first) {
+        first = card;
+        return;
+      }
+
+      // second pick
+      if (first.dataset.emoji === card.dataset.emoji) {
+        // pair found
+        first = null;
+        foundPairs++;
+        if (foundPairs === EMOJIS.length) onWin();
+      } else {
+        // mismatch
+        lock = true;
+        setTimeout(() => {
+          [card, first].forEach(c => {
+            c.classList.add('hidden');
+            c.classList.remove('revealed');
+            c.textContent = '❓';
+          });
+          first = null;
+          lock = false;
+          penalty();
+        }, 650);
+      }
+    }
+
+    // --- Controls ---
+    restartBtn.addEventListener('click', resetGame);
+    exitBtn.addEventListener('click', () => {
+      // Если игра не завершена — просто закрываем без отправки результата.
+      // Если завершена — результат уже отправлен в onWin().
+      if (tg) tg.close();
+      else window.close(); // fallback для обычного браузера
+    });
+
+    // init
+    resetGame();
+  </script>
+</body>
+</html>
