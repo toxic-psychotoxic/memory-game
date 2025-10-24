@@ -1,3 +1,4 @@
+<!-- 🎴 index.html — Игра "Найди пары" (исправленная версия с надёжной отправкой результатов) -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -157,13 +158,10 @@
 
   <script>
     // --- Telegram WebApp boot ---
-    const tg = (window.Telegram && Telegram.WebApp) ? Telegram.WebApp : null;
+    const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.ready();
       tg.expand();
-      tg.MainButton.hide();
-      tg.BackButton.show();
-      tg.BackButton.onClick(() => tg.close());
     }
 
     // --- Game state ---
@@ -192,12 +190,9 @@
 
     function formatTime(sec) {
       sec = Math.max(0, Math.floor(sec));
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      if (h) return `${h} ч ${m} мин ${s} сек`;
-      if (m) return `${m} мин ${s} сек`;
-      return `${s} сек`;
+      if (sec >= 3600) return `${Math.floor(sec/3600)} ч ${Math.floor((sec%3600)/60)} мин ${sec%60} сек`;
+      if (sec >= 60) return `${Math.floor(sec/60)} мин ${sec%60} сек`;
+      return `${sec} сек`;
     }
 
     function updateStats() {
@@ -222,19 +217,29 @@
       updateStats();
     }
 
+    // --- Исправленная отправка результата ---
     function sendWinResultOnce() {
       if (resultSent) return;
       resultSent = true;
+
       const payload = {
-        action: 'save_score',
-        // мы шлём именно итоговое время (меньше — лучше)
-        time: time
+        action: "save_score",
+        time
       };
-      if (tg) {
-        try { tg.sendData(JSON.stringify(payload)); } catch(_) {}
-        // Покажем MainButton «Закрыть» после победы
-        tg.MainButton.setText('Закрыть').show();
-        tg.MainButton.onClick(() => tg.close());
+
+      if (window.Telegram?.WebApp) {
+        const tg = window.Telegram.WebApp;
+        try {
+          tg.ready();
+          tg.expand();
+          tg.sendData(JSON.stringify(payload));
+          console.log("✅ Результат отправлен:", payload);
+          setTimeout(() => tg.close(), 1000);
+        } catch (err) {
+          console.error("❌ Ошибка при tg.sendData:", err);
+        }
+      } else {
+        console.warn("⚠️ Telegram.WebApp не найден — результат не отправлен");
       }
     }
 
@@ -273,7 +278,6 @@
       message.className = 'msg';
       updateStats();
       buildGrid();
-      if (tg) tg.MainButton.hide();
     }
 
     function onCardClick(card) {
@@ -291,14 +295,11 @@
         return;
       }
 
-      // second pick
       if (first.dataset.emoji === card.dataset.emoji) {
-        // pair found
         first = null;
         foundPairs++;
         if (foundPairs === EMOJIS.length) onWin();
       } else {
-        // mismatch
         lock = true;
         setTimeout(() => {
           [card, first].forEach(c => {
@@ -316,13 +317,11 @@
     // --- Controls ---
     restartBtn.addEventListener('click', resetGame);
     exitBtn.addEventListener('click', () => {
-      // Если игра не завершена — просто закрываем без отправки результата.
-      // Если завершена — результат уже отправлен в onWin().
-      if (tg) tg.close();
-      else window.close(); // fallback для обычного браузера
+      if (window.Telegram?.WebApp) window.Telegram.WebApp.close();
+      else window.close();
     });
 
-    // init
+    // --- Init ---
     resetGame();
   </script>
 </body>
