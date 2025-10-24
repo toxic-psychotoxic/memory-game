@@ -10,70 +10,81 @@
 <body>
   <div class="container">
     <h1>🧩 Игра "Память"</h1>
+
     <div class="stats">
       <div>⏱ Время: <span id="time">0</span> сек</div>
       <div>🔄 Попытки: <span id="moves">0</span></div>
     </div>
+
     <div id="game-board" class="board"></div>
     <div id="message" class="message"></div>
   </div>
 
-  <script src="script.js"></script>
-  <script>
-    // === Безопасная инициализация Telegram WebApp ===
-    let tg = null;
-    try {
-      tg = window.Telegram?.WebApp || null;
-      if (tg) {
-        tg.ready();
-        tg.expand();
-        console.log("✅ Telegram WebApp инициализирован");
-      } else {
-        console.warn("⚠️ Telegram.WebApp не найден — игра запущена вне Telegram");
+  <!-- === Основной игровой скрипт === -->
+  <script defer src="script.js"></script>
+
+  <!-- === Telegram WebApp + отправка результата === -->
+  <script defer>
+    // Глобальные переменные, чтобы не дублировать tg и не ломать игру
+    window.resultSent = false;
+
+    // Безопасная инициализация WebApp
+    function initTelegram() {
+      try {
+        const wa = window.Telegram?.WebApp;
+        if (wa) {
+          wa.ready();
+          wa.expand();
+          console.log("✅ Telegram WebApp готов");
+          window.tg = wa; // сохраняем в глобальную переменную
+        } else {
+          console.warn("⚠️ Telegram.WebApp не найден (возможно, запущено в браузере)");
+          window.tg = null;
+        }
+      } catch (e) {
+        console.error("❌ Ошибка инициализации WebApp:", e);
+        window.tg = null;
       }
-    } catch (err) {
-      console.error("❌ Ошибка инициализации Telegram WebApp:", err);
     }
 
-    // === Отправка результата в Telegram ===
-    let resultSent = false;
-
+    // Отправка результата в Telegram
     function sendWinResultOnce(time) {
-      if (resultSent) return;
-      resultSent = true;
+      if (window.resultSent) return;
+      window.resultSent = true;
 
-      const payload = {
-        action: "memory_score",
-        time
-      };
+      const payload = { action: "memory_score", time };
 
-      if (!tg) {
+      if (!window.tg) {
         console.warn("⚠️ Telegram.WebApp не активен, результат не отправлен:", payload);
         return;
       }
 
       try {
         console.log("📤 Отправляем результат:", payload);
-        tg.sendData(JSON.stringify(payload));
+        window.tg.sendData(JSON.stringify(payload));
 
-        // Telegram иногда не успевает принять данные, если сразу закрыть WebApp
+        // Telegram в контейнерах часто теряет sendData при мгновенном закрытии —
+        // поэтому ждём 2.5 сек перед закрытием
         setTimeout(() => {
           try {
-            tg.close();
+            window.tg.close();
             console.log("🚪 WebApp закрыт после отправки");
           } catch (err) {
-            console.error("⚠️ Ошибка при закрытии WebApp:", err);
+            console.error("⚠️ Ошибка закрытия WebApp:", err);
           }
-        }, 2500); // ← задержка 2.5 секунды гарантирует доставку
+        }, 2500);
       } catch (err) {
         console.error("❌ Ошибка tg.sendData:", err);
       }
     }
 
-    // === Вызывается из script.js при победе ===
+    // Глобальный колбэк — вызывается из script.js при победе
     window.onMemoryWin = function (time) {
       sendWinResultOnce(time);
     };
+
+    // Запуск инициализации
+    initTelegram();
   </script>
 </body>
 </html>
